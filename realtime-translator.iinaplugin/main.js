@@ -1,12 +1,11 @@
-const { core, event, http, menu, mpv, overlay, preferences, console } = iina;
+const { core, event, file, http, menu, mpv, overlay, preferences, utils, console } = iina;
 
 let enabled = readBool("enabled", true);
-let lastSubtitle = "";
+let timer = null;
+let processing = false;
+let lastSegmentEnd = null;
 let lastRequestId = 0;
-let inFlight = false;
-let queuedText = null;
-let lastRequestAt = 0;
-const cache = {};
+const translationCache = {};
 
 function pref(key, fallback) {
   const value = preferences.get(key);
@@ -34,12 +33,8 @@ function escapeHtml(text) {
     .replace(/'/g, "&#39;");
 }
 
-function normalizeSubtitle(text) {
-  return String(text || "")
-    .replace(/\{\\[^}]+\}/g, "")
-    .replace(/<[^>]+>/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+function cleanText(text) {
+  return String(text || "").replace(/\s+/g, " ").trim();
 }
 
 function setupOverlay() {
@@ -61,8 +56,8 @@ function setupOverlay() {
     }
     .rst-original {
       margin-bottom: 7px;
-      font-size: .78em;
-      opacity: .86;
+      font-size: .72em;
+      opacity: .84;
     }
     .rst-translation {
       font-weight: 700;
@@ -74,26 +69,26 @@ function setupOverlay() {
       background: rgba(0,0,0,.42);
       font-size: .72em;
       font-weight: 600;
-      opacity: .78;
+      opacity: .8;
     }
   `);
   overlay.setContent('<div id="rst-root"></div>');
   overlay.show();
 }
 
-function render(original, translation, status) {
+function render(transcript, translation, status) {
   if (!enabled) {
     overlay.hide();
     return;
   }
 
-  const showOriginal = readBool("showOriginal", true);
+  const showOriginal = readBool("showTranscript", true);
   let html = '<div id="rst-root">';
   if (status) {
     html += '<div class="rst-status">' + escapeHtml(status) + "</div>";
   } else {
-    if (showOriginal && original) {
-      html += '<div class="rst-original">' + escapeHtml(original) + "</div>";
+    if (showOriginal && transcript) {
+      html += '<div class="rst-original">' + escapeHtml(transcript) + "</div>";
     }
     if (translation) {
       html += '<div class="rst-translation">' + escapeHtml(translation) + "</div>";
@@ -108,29 +103,159 @@ function clearOverlay() {
   overlay.setContent('<div id="rst-root"></div>');
 }
 
+function currentTime() {
+  const time = mpv.getNumber("time-pos");
+  return Number.isFinite(time) ? time : 0;
+}
+
+function mediaPath() {
+  return mpv.getString("path") || mpv.getString("stream-open-filename") || "";
+}
+
+function workingDirectory() {
+  const cwd = mpv.getString("working-directory");
+  return cwd || undefined;
+}
+
+function resetTimeline() {
+  const now = currentTime();
+  lastSegmentEnd = Math.max(0, now - readNumber("chunkSeconds", 4));
+}
+
 function setEnabled(next) {
   enabled = next;
   preferences.set("enabled", next);
   preferences.sync();
   if (enabled) {
     setupOverlay();
-    core.osd("Realtime subtitle translation: on");
-    handleSubtitleChange();
+    startCapture();
+    core.osd("Realtime speech translation: on");
   } else {
+    stopCapture();
     overlay.hide();
-    core.osd("Realtime subtitle translation: off");
+    core.osd("Realtime speech translation: off");
   }
 }
 
-function buildPrompt(text) {
+function startCapture() {
+  if (timer) clearInterval(timer);
+  resetTimeline();
+  timer = setInterval(captureTick, Math.max(500, readNumber("pollIntervalMs", 1500)));
+  captureTick();
+}
+
+function stopCapture() {
+  if (timer) {
+    clearInterval(timer);
+    timer = null;
+  }
+  processing = false;
+}
+
+function canCapture() {
+  if (!utils.fileInPath("ffmpeg")) {
+    render("", "", "Install ffmpeg first: brew install ffmpeg");
+    return false;
+  }
+  if (!utils.fileInPath("curl")) {
+    render("", "", "curl is required but was not found");
+    return false;
+  }
+  if (!mediaPath()) {
+    render("", "", "Open a media file first");
+    return false;
+  }
+  return true;
+}
+
+function tempAudioName() {
+  return "rst-speech-" + Date.now() + "-" + Math.floor(Math.random() * 100000) + ".m4a";
+}
+
+async function extractAudioSegment(start, duration) {
+  const tmpName = tempAudioName();
+  const tmpPseudoPath = "@tmp/" + tmpName;
+  const tmpPath = utils.resolvePath(tmpPseudoPath);
+  const args = [
+    "-hide_banner",
+    "-loglevel", "error",
+    "-ss", String(Math.max(0, start)),
+    "-t", String(Math.max(0.5, duration)),
+    "-i", mediaPath(),
+    "-vn",
+    "-ac", "1",
+    "-ar", "16000",
+    "-b:a", "48k",
+    "-y",
+    tmpPath
+  ];
+
+  const result = await utils.exec("ffmpeg", args, workingDirectory());
+  if (result.status !== 0) {
+    throw new Error("ffmpeg failed: " + cleanText(result.stderr || result.stdout));
+  }
+  return { path: tmpPath, pseudoPath: tmpPseudoPath };
+}
+
+function transcriptionArgs(audioPath) {
+  const args = [
+    "-sS",
+    pref("transcriptionUrl", "https://api.openai.com/v1/audio/transcriptions"),
+    "-H", "Authorization: Bearer " + pref("apiKey", ""),
+    "-F", "file=@" + audioPath,
+    "-F", "model=" + pref("transcriptionModel", "gpt-4o-mini-transcribe"),
+    "-F", "response_format=json"
+  ];
+
+  const language = pref("sourceLanguage", "auto");
+  if (language && language !== "auto") {
+    args.push("-F", "language=" + language);
+  }
+
+  const prompt = pref("transcriptionPrompt", "");
+  if (prompt) {
+    args.push("-F", "prompt=" + prompt);
+  }
+
+  return args;
+}
+
+async function transcribeAudio(audioPath) {
+  const apiKey = pref("apiKey", "");
+  if (!apiKey) {
+    render("", "", "Set API key in plugin preferences");
+    return "";
+  }
+
+  const result = await utils.exec("curl", transcriptionArgs(audioPath));
+  if (result.status !== 0) {
+    throw new Error("transcription request failed: " + cleanText(result.stderr || result.stdout));
+  }
+
+  const stdout = cleanText(result.stdout);
+  if (!stdout) return "";
+
+  try {
+    const data = JSON.parse(stdout);
+    if (data.error && data.error.message) {
+      throw new Error(data.error.message);
+    }
+    return cleanText(data.text || data.transcript || data.translation || "");
+  } catch (err) {
+    if (stdout[0] === "{" || stdout[0] === "[") throw err;
+    return stdout;
+  }
+}
+
+function buildTranslationPrompt(text) {
   const target = pref("targetLanguage", "Simplified Chinese");
   const source = pref("sourceLanguage", "auto");
   const sourceHint = source === "auto" ? "Detect the source language." : "The source language is " + source + ".";
   return [
-    "Translate the subtitle into " + target + ".",
+    "Translate this spoken transcript into " + target + ".",
     sourceHint,
-    "Keep names, tone, punctuation, and line-break-friendly brevity.",
-    "Return only the translated subtitle text, with no explanations.",
+    "Keep names, tone, punctuation, and subtitle-friendly brevity.",
+    "Return only the translated text, with no explanations.",
     "",
     text
   ].join("\n");
@@ -140,139 +265,141 @@ function extractTranslation(response) {
   const data = response.data || JSON.parse(response.text || "{}");
   if (data && data.choices && data.choices.length) {
     const choice = data.choices[0];
-    if (choice.message && choice.message.content) return String(choice.message.content).trim();
-    if (choice.text) return String(choice.text).trim();
+    if (choice.message && choice.message.content) return cleanText(choice.message.content);
+    if (choice.text) return cleanText(choice.text);
   }
-  if (data && data.translation) return String(data.translation).trim();
-  if (data && data.translatedText) return String(data.translatedText).trim();
+  if (data && data.translation) return cleanText(data.translation);
+  if (data && data.translatedText) return cleanText(data.translatedText);
   throw new Error("Unexpected translation response");
 }
 
-async function translate(text, requestId) {
-  const apiBaseUrl = pref("apiBaseUrl", "");
-  const apiKey = pref("apiKey", "");
-  const model = pref("model", "");
+async function translateTranscript(text) {
+  if (translationCache[text]) return translationCache[text];
 
-  if (!apiBaseUrl || !apiKey || !model) {
-    render(text, "", "Set API URL, key, and model in plugin preferences");
-    return;
+  const apiKey = pref("apiKey", "");
+  const chatUrl = pref("chatUrl", "https://api.openai.com/v1/chat/completions");
+  const chatModel = pref("chatModel", "gpt-4o-mini");
+
+  if (!apiKey || !chatUrl || !chatModel) {
+    render(text, "", "Set chat URL, API key, and model in preferences");
+    return "";
   }
 
-  const body = {
-    model,
-    temperature: 0.2,
-    messages: [
-      {
-        role: "system",
-        content: "You are a subtitle translation engine. Return only the translated subtitle text."
-      },
-      {
-        role: "user",
-        content: buildPrompt(text)
-      }
-    ]
-  };
-
-  const response = await http.post(apiBaseUrl, {
+  const response = await http.post(chatUrl, {
     headers: {
       "Content-Type": "application/json",
       "Authorization": "Bearer " + apiKey
     },
     params: {},
-    data: body
+    data: {
+      model: chatModel,
+      temperature: 0.2,
+      messages: [
+        {
+          role: "system",
+          content: "You translate spoken transcripts into concise subtitles. Return only the translation."
+        },
+        {
+          role: "user",
+          content: buildTranslationPrompt(text)
+        }
+      ]
+    }
   });
 
   if (response.statusCode < 200 || response.statusCode >= 300) {
-    throw new Error("HTTP " + response.statusCode + " " + response.reason);
+    throw new Error("translation HTTP " + response.statusCode + " " + response.reason);
   }
 
   const translated = extractTranslation(response);
-  cache[text] = translated;
-  if (requestId === lastRequestId && enabled) {
-    render(text, translated, "");
+  translationCache[text] = translated;
+  return translated;
+}
+
+async function processSegment(start, duration, requestId) {
+  let temp = null;
+  try {
+    temp = await extractAudioSegment(start, duration);
+    const transcript = await transcribeAudio(temp.path);
+    if (!transcript || requestId !== lastRequestId || !enabled) return;
+
+    render(transcript, "", "Translating speech...");
+    const translated = await translateTranscript(transcript);
+    if (requestId === lastRequestId && enabled) {
+      render(transcript, translated, "");
+    }
+  } finally {
+    if (temp && temp.pseudoPath) {
+      try {
+        file.delete(temp.pseudoPath);
+      } catch (err) {
+        console.warn("[Realtime Speech Translator] temp cleanup failed: " + err.message);
+      }
+    }
   }
 }
 
-function scheduleTranslation(text) {
-  if (cache[text]) {
-    render(text, cache[text], "");
-    return;
+function captureTick() {
+  if (!enabled || processing) return;
+  if (mpv.getFlag("pause")) return;
+  if (!canCapture()) return;
+
+  const now = currentTime();
+  const chunkSeconds = Math.max(2, readNumber("chunkSeconds", 4));
+  const maxCatchup = Math.max(chunkSeconds, readNumber("maxCatchupSeconds", 8));
+
+  if (lastSegmentEnd === null || now < lastSegmentEnd || now - lastSegmentEnd > maxCatchup) {
+    lastSegmentEnd = Math.max(0, now - chunkSeconds);
   }
 
-  queuedText = text;
-  pumpQueue();
-}
+  const duration = now - lastSegmentEnd;
+  if (duration < Math.max(1.5, chunkSeconds * 0.75)) return;
 
-function pumpQueue() {
-  if (inFlight || !queuedText || !enabled) return;
-
-  const minIntervalMs = Math.max(0, readNumber("minIntervalMs", 750));
-  const now = Date.now();
-  const wait = Math.max(0, minIntervalMs - (now - lastRequestAt));
-  if (wait > 0) {
-    setTimeout(pumpQueue, wait);
-    return;
-  }
-
-  const text = queuedText;
-  queuedText = null;
-  inFlight = true;
-  lastRequestAt = Date.now();
+  const start = lastSegmentEnd;
+  lastSegmentEnd = now;
+  processing = true;
   const requestId = ++lastRequestId;
-  render(text, "", "Translating...");
+  render("", "", "Listening...");
 
-  translate(text, requestId)
+  processSegment(start, duration, requestId)
     .catch((err) => {
-      console.error("[Realtime Subtitle Translator] " + err.message);
-      if (requestId === lastRequestId) render(text, "", "Translation failed");
+      console.error("[Realtime Speech Translator] " + err.message);
+      if (enabled) render("", "", err.message || "Speech translation failed");
     })
     .finally(() => {
-      inFlight = false;
-      if (queuedText) pumpQueue();
+      processing = false;
     });
 }
 
-function handleSubtitleChange() {
-  if (!enabled) return;
-  const text = normalizeSubtitle(mpv.getString("sub-text"));
-  if (!text) {
-    lastSubtitle = "";
-    clearOverlay();
-    return;
-  }
-  if (text === lastSubtitle) return;
-  lastSubtitle = text;
-  scheduleTranslation(text);
-}
-
-menu.addItem(menu.item("Toggle Realtime Subtitle Translation", () => {
+menu.addItem(menu.item("Toggle Realtime Speech Translation", () => {
   setEnabled(!enabled);
 }, { keyBinding: "Ctrl+Alt+t" }));
 
-menu.addItem(menu.item("Refresh Translation Overlay", () => {
+menu.addItem(menu.item("Restart Realtime Speech Translation", () => {
   setupOverlay();
-  lastSubtitle = "";
-  handleSubtitleChange();
+  resetTimeline();
+  captureTick();
 }));
 
 event.on("iina.window-loaded", () => {
   setupOverlay();
+  if (enabled) startCapture();
   if (!enabled) overlay.hide();
 });
 
 event.on("iina.file-loaded", () => {
-  lastSubtitle = "";
-  queuedText = null;
   clearOverlay();
+  resetTimeline();
+  if (enabled) startCapture();
 });
 
-event.on("mpv.sub-text.changed", handleSubtitleChange);
-event.on("mpv.sid.changed", () => {
-  lastSubtitle = "";
-  handleSubtitleChange();
+event.on("mpv.seek", () => {
+  resetTimeline();
+  clearOverlay();
 });
 
 if (core.window.loaded) {
   setupOverlay();
+  if (enabled) startCapture();
   if (!enabled) overlay.hide();
 }

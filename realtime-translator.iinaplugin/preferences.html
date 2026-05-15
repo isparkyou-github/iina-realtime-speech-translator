@@ -19,16 +19,8 @@
   <div class="pref-section">
     <label>
       <input type="checkbox" data-type="bool" data-pref-key="enabled">
-      Enable realtime subtitle translation
+      Enable realtime speech translation
     </label>
-  </div>
-
-  <div class="pref-section">
-    <label>
-      <span>OpenAI-compatible chat completions URL</span>
-      <input type="text" data-pref-key="apiBaseUrl">
-    </label>
-    <p class="small secondary pref-help">Example: https://api.openai.com/v1/chat/completions</p>
   </div>
 
   <div class="pref-section">
@@ -40,8 +32,39 @@
 
   <div class="pref-section">
     <label>
-      <span>Model</span>
-      <input type="text" data-pref-key="model">
+      <span>Speech transcription URL</span>
+      <input type="text" data-pref-key="transcriptionUrl">
+    </label>
+    <p class="small secondary pref-help">Example: https://api.openai.com/v1/audio/transcriptions</p>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <span>Speech transcription model</span>
+      <input type="text" data-pref-key="transcriptionModel">
+    </label>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <span>Transcription prompt</span>
+      <input type="text" data-pref-key="transcriptionPrompt">
+    </label>
+    <p class="small secondary pref-help">Optional terms, names, or context to improve speech recognition.</p>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <span>Chat translation URL</span>
+      <input type="text" data-pref-key="chatUrl">
+    </label>
+    <p class="small secondary pref-help">Example: https://api.openai.com/v1/chat/completions</p>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <span>Chat translation model</span>
+      <input type="text" data-pref-key="chatModel">
     </label>
   </div>
 
@@ -57,13 +80,34 @@
       <span>Source language</span>
       <input type="text" data-pref-key="sourceLanguage">
     </label>
-    <p class="small secondary pref-help">Use auto to let the model detect it.</p>
+    <p class="small secondary pref-help">Use auto to let the model detect it, or use a language code such as en, ja, ko.</p>
   </div>
 
   <div class="pref-section">
     <label>
-      <input type="checkbox" data-type="bool" data-pref-key="showOriginal">
-      Show original subtitle above translation
+      <input type="checkbox" data-type="bool" data-pref-key="showTranscript">
+      Show recognized speech above translation
+    </label>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <span>Audio chunk seconds</span>
+      <input type="number" data-type="int" min="2" max="12" data-pref-key="chunkSeconds">
+    </label>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <span>Poll interval, ms</span>
+      <input type="number" data-type="int" min="500" max="5000" step="100" data-pref-key="pollIntervalMs">
+    </label>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <span>Max catch-up window, seconds</span>
+      <input type="number" data-type="int" min="4" max="30" data-pref-key="maxCatchupSeconds">
     </label>
   </div>
 
@@ -85,13 +129,6 @@
     <label>
       <span>Max overlay width, vw</span>
       <input type="number" data-type="int" min="35" max="100" data-pref-key="maxWidth">
-    </label>
-  </div>
-
-  <div class="pref-section">
-    <label>
-      <span>Minimum request interval, ms</span>
-      <input type="number" data-type="int" min="0" max="5000" step="50" data-pref-key="minIntervalMs">
     </label>
   </div>
 </body>

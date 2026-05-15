@@ -1,32 +1,38 @@
 {
-  "name": "Realtime Subtitle Translator",
-  "version": "1.0.0",
-  "identifier": "dev.codex.iina.realtime-subtitle-translator",
+  "name": "Realtime Speech Translator",
+  "version": "1.1.0",
+  "identifier": "dev.codex.iina.realtime-speech-translator",
   "author": {
     "name": "Codex"
   },
-  "description": "Translate the current subtitle line in real time and render it as an overlay.",
+  "description": "Transcribe the playing audio in near real time, translate it, and render the result as an overlay.",
   "entry": "main.js",
   "preferencesPage": "preferences.html",
   "permissions": [
     "show-osd",
     "video-overlay",
-    "network-request"
+    "network-request",
+    "file-system"
   ],
   "allowedDomains": [
     "*"
   ],
   "preferenceDefaults": {
     "enabled": true,
-    "apiBaseUrl": "https://api.openai.com/v1/chat/completions",
     "apiKey": "",
-    "model": "gpt-4o-mini",
+    "transcriptionUrl": "https://api.openai.com/v1/audio/transcriptions",
+    "transcriptionModel": "gpt-4o-mini-transcribe",
+    "transcriptionPrompt": "",
+    "chatUrl": "https://api.openai.com/v1/chat/completions",
+    "chatModel": "gpt-4o-mini",
     "targetLanguage": "Simplified Chinese",
     "sourceLanguage": "auto",
-    "showOriginal": true,
+    "showTranscript": true,
     "fontSize": 28,
     "bottomOffset": 9,
     "maxWidth": 82,
-    "minIntervalMs": 750
+    "chunkSeconds": 4,
+    "pollIntervalMs": 1500,
+    "maxCatchupSeconds": 8
   }
 }

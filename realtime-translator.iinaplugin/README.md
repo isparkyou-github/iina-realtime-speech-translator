@@ -1,20 +1,31 @@
-# Realtime Subtitle Translator for IINA
+# Realtime Speech Translator for IINA
 
-This IINA plugin translates the current text subtitle line in real time and renders the translation as a video overlay.
+This IINA plugin transcribes the playing audio in near real time, translates the recognized speech, and renders the translation as a video overlay.
 
 ## Features
 
-- Watches mpv's `sub-text` property for the currently displayed subtitle.
-- Sends each new subtitle line to an OpenAI-compatible `/v1/chat/completions` endpoint.
-- Caches translated lines during playback to avoid repeated requests.
-- Shows the original subtitle and translation in an overlay.
+- Reads the current playback time and extracts short audio chunks with `ffmpeg`.
+- Sends each chunk to a speech-to-text endpoint.
+- Sends recognized speech to an OpenAI-compatible `/v1/chat/completions` endpoint for translation.
+- Shows the recognized speech and translation in an overlay.
 - Adds a Plugin menu toggle with `Ctrl+Alt+t`.
+
+## Requirements
+
+- IINA 1.4.0 or later.
+- `ffmpeg` and `curl` available in `PATH`.
+
+Install ffmpeg with Homebrew:
+
+```sh
+brew install ffmpeg
+```
 
 ## Install
 
-1. Open IINA 1.4.0 or later.
+1. Open IINA.
 2. Open Settings > Plugins.
-3. Install the packed `realtime-subtitle-translator.iinaplgz`, or link this folder for development.
+3. Install the packed `realtime-speech-translator.iinaplgz`, or link this folder for development.
 
 For development linking, IINA's documentation supports:
 
@@ -24,11 +35,13 @@ ln -s /path/to/realtime-translator.iinaplugin "$HOME/Library/Application Support
 
 ## Configure
 
-In IINA Settings > Plugins > Realtime Subtitle Translator > Preferences:
+In IINA Settings > Plugins > Realtime Speech Translator > Preferences:
 
-- Set `OpenAI-compatible chat completions URL`.
 - Set `API key`.
-- Set `Model`.
+- Set `Speech transcription URL`.
+- Set `Speech transcription model`.
+- Set `Chat translation URL`.
+- Set `Chat translation model`.
 - Set `Target language`, for example `Simplified Chinese`.
 
-The plugin requires text subtitles. Bitmap subtitles such as PGS/DVD subtitles cannot be translated through mpv's `sub-text` property.
+The plugin does not translate existing subtitle files. It extracts audio from playback, transcribes speech, and translates the transcript.

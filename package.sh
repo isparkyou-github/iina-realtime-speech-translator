@@ -2,5 +2,4 @@
 set -eu
 
 cd "$(dirname "$0")/realtime-translator.iinaplugin"
-zip -r ../realtime-subtitle-translator.iinaplgz .
-
+zip -r ../realtime-speech-translator.iinaplgz .
