@@ -1,0 +1,98 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { padding: 0 4px; }
+    input[type="text"], input[type="password"], input[type="number"], select {
+      width: 100%;
+      box-sizing: border-box;
+      margin-top: 4px;
+    }
+    label span {
+      display: block;
+      margin-bottom: 2px;
+    }
+  </style>
+</head>
+<body>
+  <div class="pref-section">
+    <label>
+      <input type="checkbox" data-type="bool" data-pref-key="enabled">
+      Enable realtime subtitle translation
+    </label>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <span>OpenAI-compatible chat completions URL</span>
+      <input type="text" data-pref-key="apiBaseUrl">
+    </label>
+    <p class="small secondary pref-help">Example: https://api.openai.com/v1/chat/completions</p>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <span>API key</span>
+      <input type="password" data-pref-key="apiKey">
+    </label>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <span>Model</span>
+      <input type="text" data-pref-key="model">
+    </label>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <span>Target language</span>
+      <input type="text" data-pref-key="targetLanguage">
+    </label>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <span>Source language</span>
+      <input type="text" data-pref-key="sourceLanguage">
+    </label>
+    <p class="small secondary pref-help">Use auto to let the model detect it.</p>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <input type="checkbox" data-type="bool" data-pref-key="showOriginal">
+      Show original subtitle above translation
+    </label>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <span>Font size</span>
+      <input type="number" data-type="int" min="14" max="72" data-pref-key="fontSize">
+    </label>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <span>Bottom offset, vh</span>
+      <input type="number" data-type="int" min="2" max="35" data-pref-key="bottomOffset">
+    </label>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <span>Max overlay width, vw</span>
+      <input type="number" data-type="int" min="35" max="100" data-pref-key="maxWidth">
+    </label>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <span>Minimum request interval, ms</span>
+      <input type="number" data-type="int" min="0" max="5000" step="50" data-pref-key="minIntervalMs">
+    </label>
+  </div>
+</body>
+</html>

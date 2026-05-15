@@ -1,0 +1,32 @@
+{
+  "name": "Realtime Subtitle Translator",
+  "version": "1.0.0",
+  "identifier": "dev.codex.iina.realtime-subtitle-translator",
+  "author": {
+    "name": "Codex"
+  },
+  "description": "Translate the current subtitle line in real time and render it as an overlay.",
+  "entry": "main.js",
+  "preferencesPage": "preferences.html",
+  "permissions": [
+    "show-osd",
+    "video-overlay",
+    "network-request"
+  ],
+  "allowedDomains": [
+    "*"
+  ],
+  "preferenceDefaults": {
+    "enabled": true,
+    "apiBaseUrl": "https://api.openai.com/v1/chat/completions",
+    "apiKey": "",
+    "model": "gpt-4o-mini",
+    "targetLanguage": "Simplified Chinese",
+    "sourceLanguage": "auto",
+    "showOriginal": true,
+    "fontSize": 28,
+    "bottomOffset": 9,
+    "maxWidth": 82,
+    "minIntervalMs": 750
+  }
+}
