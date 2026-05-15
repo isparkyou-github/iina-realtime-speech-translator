@@ -21,6 +21,8 @@ Install ffmpeg with Homebrew:
 brew install ffmpeg
 ```
 
+If IINA cannot find `ffmpeg`, set `ffmpeg path` in plugin preferences. Common Homebrew paths are `/opt/homebrew/bin/ffmpeg` on Apple Silicon and `/usr/local/bin/ffmpeg` on Intel Macs.
+
 ## Install
 
 1. Open IINA.
@@ -38,6 +40,7 @@ ln -s /path/to/realtime-translator.iinaplugin "$HOME/Library/Application Support
 In IINA Settings > Plugins > Realtime Speech Translator > Preferences:
 
 - Set `API key`.
+- Set `ffmpeg path` if auto-detection does not find it.
 - Set `Speech transcription URL`.
 - Set `Speech transcription model`.
 - Set `Chat translation URL`.

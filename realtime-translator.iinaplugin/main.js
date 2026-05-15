@@ -6,6 +6,17 @@ let processing = false;
 let lastSegmentEnd = null;
 let lastRequestId = 0;
 const translationCache = {};
+const ffmpegCandidates = [
+  "ffmpeg",
+  "/opt/homebrew/bin/ffmpeg",
+  "/usr/local/bin/ffmpeg"
+];
+const curlCandidates = [
+  "curl",
+  "/usr/bin/curl",
+  "/opt/homebrew/bin/curl",
+  "/usr/local/bin/curl"
+];
 
 function pref(key, fallback) {
   const value = preferences.get(key);
@@ -108,6 +119,23 @@ function currentTime() {
   return Number.isFinite(time) ? time : 0;
 }
 
+function firstAvailableBinary(configKey, candidates) {
+  const configured = pref(configKey, "");
+  if (configured && utils.fileInPath(configured)) return configured;
+  for (const candidate of candidates) {
+    if (utils.fileInPath(candidate)) return candidate;
+  }
+  return "";
+}
+
+function ffmpegBinary() {
+  return firstAvailableBinary("ffmpegPath", ffmpegCandidates);
+}
+
+function curlBinary() {
+  return firstAvailableBinary("curlPath", curlCandidates);
+}
+
 function mediaPath() {
   return mpv.getString("path") || mpv.getString("stream-open-filename") || "";
 }
@@ -153,12 +181,12 @@ function stopCapture() {
 }
 
 function canCapture() {
-  if (!utils.fileInPath("ffmpeg")) {
-    render("", "", "Install ffmpeg first: brew install ffmpeg");
+  if (!ffmpegBinary()) {
+    render("", "", "Install ffmpeg first, or set its path in preferences");
     return false;
   }
-  if (!utils.fileInPath("curl")) {
-    render("", "", "curl is required but was not found");
+  if (!curlBinary()) {
+    render("", "", "curl is required, or set its path in preferences");
     return false;
   }
   if (!mediaPath()) {
@@ -190,7 +218,7 @@ async function extractAudioSegment(start, duration) {
     tmpPath
   ];
 
-  const result = await utils.exec("ffmpeg", args, workingDirectory());
+  const result = await utils.exec(ffmpegBinary(), args, workingDirectory());
   if (result.status !== 0) {
     throw new Error("ffmpeg failed: " + cleanText(result.stderr || result.stdout));
   }
@@ -227,7 +255,7 @@ async function transcribeAudio(audioPath) {
     return "";
   }
 
-  const result = await utils.exec("curl", transcriptionArgs(audioPath));
+  const result = await utils.exec(curlBinary(), transcriptionArgs(audioPath));
   if (result.status !== 0) {
     throw new Error("transcription request failed: " + cleanText(result.stderr || result.stdout));
   }

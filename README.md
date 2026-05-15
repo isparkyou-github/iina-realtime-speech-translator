@@ -13,11 +13,25 @@
 
 ## 安装
 
-先确保本机有命令行版 `ffmpeg`：
+必须先确保本机有命令行版 `ffmpeg`。插件依赖它从当前视频/音频中抽取短音频片段：
 
 ```sh
 brew install ffmpeg
 ```
+
+Apple Silicon Mac 上 Homebrew 通常会安装到：
+
+```text
+/opt/homebrew/bin/ffmpeg
+```
+
+Intel Mac 上通常是：
+
+```text
+/usr/local/bin/ffmpeg
+```
+
+如果 IINA 插件提示找不到 `ffmpeg`，请在插件偏好设置里的 `ffmpeg path` 手动填写上面的完整路径。
 
 下载或打包 `realtime-speech-translator.iinaplgz`，然后在 IINA 中打开：
 
@@ -42,6 +56,7 @@ Settings > Plugins > Realtime Speech Translator > Preferences
 填写以下配置：
 
 - `API key`：你的接口密钥
+- `ffmpeg path`：可留空自动检测；找不到时填 `/opt/homebrew/bin/ffmpeg` 或 `/usr/local/bin/ffmpeg`
 - `Speech transcription URL`：例如 `https://api.openai.com/v1/audio/transcriptions`
 - `Speech transcription model`：例如 `gpt-4o-mini-transcribe`
 - `Chat translation URL`：例如 `https://api.openai.com/v1/chat/completions`

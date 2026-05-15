@@ -32,6 +32,22 @@
 
   <div class="pref-section">
     <label>
+      <span>ffmpeg path</span>
+      <input type="text" data-pref-key="ffmpegPath" placeholder="/opt/homebrew/bin/ffmpeg">
+    </label>
+    <p class="small secondary pref-help">Leave empty for auto-detect. Homebrew on Apple Silicon usually installs it at /opt/homebrew/bin/ffmpeg.</p>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <span>curl path</span>
+      <input type="text" data-pref-key="curlPath" placeholder="/usr/bin/curl">
+    </label>
+    <p class="small secondary pref-help">Leave empty for auto-detect.</p>
+  </div>
+
+  <div class="pref-section">
+    <label>
       <span>Speech transcription URL</span>
       <input type="text" data-pref-key="transcriptionUrl">
     </label>

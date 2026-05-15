@@ -20,6 +20,8 @@
   "preferenceDefaults": {
     "enabled": true,
     "apiKey": "",
+    "ffmpegPath": "",
+    "curlPath": "",
     "transcriptionUrl": "https://api.openai.com/v1/audio/transcriptions",
     "transcriptionModel": "gpt-4o-mini-transcribe",
     "transcriptionPrompt": "",
