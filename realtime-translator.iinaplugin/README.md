@@ -48,3 +48,7 @@ In IINA Settings > Plugins > Realtime Speech Translator > Preferences:
 - Set `Target language`, for example `Simplified Chinese`.
 
 The plugin does not translate existing subtitle files. It extracts audio from playback, transcribes speech, and translates the transcript.
+
+## Troubleshooting
+
+If the overlay says `OpenAI quota exceeded`, the configured API key has no usable quota or billing access. Check billing, project limits, and the API key, or switch to another compatible provider in plugin preferences.

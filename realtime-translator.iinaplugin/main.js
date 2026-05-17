@@ -5,6 +5,7 @@ let timer = null;
 let processing = false;
 let lastSegmentEnd = null;
 let lastRequestId = 0;
+let apiBackoffUntil = 0;
 const translationCache = {};
 const ffmpegCandidates = [
   "ffmpeg",
@@ -48,6 +49,39 @@ function cleanText(text) {
   return String(text || "").replace(/\s+/g, " ").trim();
 }
 
+function shortText(text, maxLength) {
+  const cleaned = cleanText(text);
+  if (cleaned.length <= maxLength) return cleaned;
+  return cleaned.slice(0, maxLength - 1).trim() + "...";
+}
+
+function apiErrorMessage(error) {
+  const message = cleanText(
+    (error && error.message) ||
+    (error && error.error && error.error.message) ||
+    error
+  );
+  const code = cleanText(error && (error.code || error.type || error.param));
+  const lower = (message + " " + code).toLowerCase();
+
+  if (lower.includes("quota") || lower.includes("billing") || lower.includes("insufficient_quota")) {
+    apiBackoffUntil = Date.now() + 5 * 60 * 1000;
+    return "OpenAI quota exceeded. Check billing or use another API key.";
+  }
+  if (lower.includes("rate limit") || lower.includes("rate_limit") || lower.includes("429")) {
+    apiBackoffUntil = Date.now() + 30 * 1000;
+    return "API rate limited. Waiting before retrying.";
+  }
+  if (lower.includes("api key") || lower.includes("unauthorized") || lower.includes("invalid_api_key") || lower.includes("401")) {
+    apiBackoffUntil = Date.now() + 5 * 60 * 1000;
+    return "API key invalid or missing. Check plugin preferences.";
+  }
+  if (lower.includes("model") && (lower.includes("not found") || lower.includes("does not exist"))) {
+    return "Model not available. Check transcription and chat model settings.";
+  }
+  return shortText(message || "Speech translation failed", 120);
+}
+
 function setupOverlay() {
   overlay.simpleMode();
   overlay.setStyle(`
@@ -75,12 +109,15 @@ function setupOverlay() {
     }
     .rst-status {
       display: inline-block;
+      max-width: min(76vw, 980px);
       padding: 4px 10px;
       border-radius: 8px;
       background: rgba(0,0,0,.42);
       font-size: .72em;
       font-weight: 600;
       opacity: .8;
+      white-space: normal;
+      overflow-wrap: anywhere;
     }
   `);
   overlay.setContent('<div id="rst-root"></div>');
@@ -266,7 +303,7 @@ async function transcribeAudio(audioPath) {
   try {
     const data = JSON.parse(stdout);
     if (data.error && data.error.message) {
-      throw new Error(data.error.message);
+      throw new Error(apiErrorMessage(data.error));
     }
     return cleanText(data.text || data.transcript || data.translation || "");
   } catch (err) {
@@ -336,7 +373,14 @@ async function translateTranscript(text) {
   });
 
   if (response.statusCode < 200 || response.statusCode >= 300) {
-    throw new Error("translation HTTP " + response.statusCode + " " + response.reason);
+    let details = response.reason || "";
+    try {
+      const data = response.data || JSON.parse(response.text || "{}");
+      if (data.error) details = apiErrorMessage(data.error);
+    } catch (err) {
+      details = response.reason || response.text || "";
+    }
+    throw new Error(apiErrorMessage("translation HTTP " + response.statusCode + " " + details));
   }
 
   const translated = extractTranslation(response);
@@ -370,6 +414,7 @@ async function processSegment(start, duration, requestId) {
 function captureTick() {
   if (!enabled || processing) return;
   if (mpv.getFlag("pause")) return;
+  if (Date.now() < apiBackoffUntil) return;
   if (!canCapture()) return;
 
   const now = currentTime();
@@ -391,8 +436,9 @@ function captureTick() {
 
   processSegment(start, duration, requestId)
     .catch((err) => {
-      console.error("[Realtime Speech Translator] " + err.message);
-      if (enabled) render("", "", err.message || "Speech translation failed");
+      const message = apiErrorMessage(err);
+      console.error("[Realtime Speech Translator] " + cleanText(err && err.message));
+      if (enabled) render("", "", message);
     })
     .finally(() => {
       processing = false;
