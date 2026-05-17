@@ -36,6 +36,17 @@ function readNumber(key, fallback) {
   return Number.isFinite(value) ? value : fallback;
 }
 
+function migrateLatencyDefaults() {
+  if (readBool("latencyDefaultsMigrated", false)) return;
+
+  if (readNumber("chunkSeconds", 4) === 4) preferences.set("chunkSeconds", 2);
+  if (readNumber("pollIntervalMs", 1500) === 1500) preferences.set("pollIntervalMs", 650);
+  if (readNumber("maxCatchupSeconds", 8) === 8) preferences.set("maxCatchupSeconds", 4);
+
+  preferences.set("latencyDefaultsMigrated", true);
+  preferences.sync();
+}
+
 function escapeHtml(text) {
   return String(text)
     .replace(/&/g, "&amp;")
@@ -184,7 +195,7 @@ function workingDirectory() {
 
 function resetTimeline() {
   const now = currentTime();
-  lastSegmentEnd = Math.max(0, now - readNumber("chunkSeconds", 4));
+  lastSegmentEnd = Math.max(0, now - readNumber("chunkSeconds", 2));
 }
 
 function setEnabled(next) {
@@ -205,7 +216,7 @@ function setEnabled(next) {
 function startCapture() {
   if (timer) clearInterval(timer);
   resetTimeline();
-  timer = setInterval(captureTick, Math.max(500, readNumber("pollIntervalMs", 1500)));
+  timer = setInterval(captureTick, Math.max(250, readNumber("pollIntervalMs", 650)));
   captureTick();
 }
 
@@ -395,7 +406,6 @@ async function processSegment(start, duration, requestId) {
     const transcript = await transcribeAudio(temp.path);
     if (!transcript || requestId !== lastRequestId || !enabled) return;
 
-    render(transcript, "", "Translating speech...");
     const translated = await translateTranscript(transcript);
     if (requestId === lastRequestId && enabled) {
       render(transcript, translated, "");
@@ -418,21 +428,20 @@ function captureTick() {
   if (!canCapture()) return;
 
   const now = currentTime();
-  const chunkSeconds = Math.max(2, readNumber("chunkSeconds", 4));
-  const maxCatchup = Math.max(chunkSeconds, readNumber("maxCatchupSeconds", 8));
+  const chunkSeconds = Math.max(1, readNumber("chunkSeconds", 2));
+  const maxCatchup = Math.max(chunkSeconds, readNumber("maxCatchupSeconds", 4));
 
   if (lastSegmentEnd === null || now < lastSegmentEnd || now - lastSegmentEnd > maxCatchup) {
     lastSegmentEnd = Math.max(0, now - chunkSeconds);
   }
 
   const duration = now - lastSegmentEnd;
-  if (duration < Math.max(1.5, chunkSeconds * 0.75)) return;
+  if (duration < Math.max(0.8, chunkSeconds * 0.65)) return;
 
   const start = lastSegmentEnd;
   lastSegmentEnd = now;
   processing = true;
   const requestId = ++lastRequestId;
-  render("", "", "Listening...");
 
   processSegment(start, duration, requestId)
     .catch((err) => {
@@ -442,8 +451,11 @@ function captureTick() {
     })
     .finally(() => {
       processing = false;
+      if (enabled) setTimeout(captureTick, 0);
     });
 }
+
+migrateLatencyDefaults();
 
 menu.addItem(menu.item("Toggle Realtime Speech Translation", () => {
   setEnabled(!enabled);
@@ -473,6 +485,7 @@ event.on("mpv.seek", () => {
 });
 
 if (core.window.loaded) {
+  migrateLatencyDefaults();
   setupOverlay();
   if (enabled) startCapture();
   if (!enabled) overlay.hide();

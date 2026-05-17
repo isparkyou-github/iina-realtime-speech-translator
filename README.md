@@ -9,6 +9,7 @@
 - 支持 OpenAI 兼容的 speech-to-text 和 chat completions 接口。
 - 支持自定义 API URL、API Key、转写模型、翻译模型、源语言和目标语言。
 - 支持显示识别出的原文加译文，或只显示译文。
+- 处理中不会显示 `Listening`、`Translating` 等状态文字，只保留上一条译文直到新译文到达。
 - 提供 IINA 插件菜单开关，快捷键 `Ctrl+Alt+t`。
 
 ## 安装
@@ -63,6 +64,8 @@ Settings > Plugins > Realtime Speech Translator > Preferences
 - `Chat translation model`：例如 `gpt-4o-mini`
 - `Target language`：例如 `Simplified Chinese`
 - `Source language`：默认 `auto`，也可以填 `en`、`ja`、`ko` 等语言代码
+- `Audio chunk seconds`：默认 `2`，越低延迟越低，但识别稳定性也会下降
+- `Poll interval, ms`：默认 `650`
 
 ## 打包
 

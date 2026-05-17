@@ -1,6 +1,6 @@
 {
   "name": "Realtime Speech Translator",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "identifier": "dev.codex.iina.realtime-speech-translator",
   "author": {
     "name": "Codex"
@@ -30,11 +30,12 @@
     "targetLanguage": "Simplified Chinese",
     "sourceLanguage": "auto",
     "showTranscript": true,
+    "latencyDefaultsMigrated": false,
     "fontSize": 28,
     "bottomOffset": 9,
     "maxWidth": 82,
-    "chunkSeconds": 4,
-    "pollIntervalMs": 1500,
-    "maxCatchupSeconds": 8
+    "chunkSeconds": 2,
+    "pollIntervalMs": 650,
+    "maxCatchupSeconds": 4
   }
 }

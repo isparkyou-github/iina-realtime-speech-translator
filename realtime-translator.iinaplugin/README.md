@@ -8,6 +8,7 @@ This IINA plugin transcribes the playing audio in near real time, translates the
 - Sends each chunk to a speech-to-text endpoint.
 - Sends recognized speech to an OpenAI-compatible `/v1/chat/completions` endpoint for translation.
 - Shows the recognized speech and translation in an overlay.
+- Keeps the previous translation visible while processing; it does not show unrelated listening/translating status text.
 - Adds a Plugin menu toggle with `Ctrl+Alt+t`.
 
 ## Requirements
