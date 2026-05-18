@@ -32,6 +32,72 @@
 
   <div class="pref-section">
     <label>
+      <span>ASR backend</span>
+      <input type="text" data-pref-key="asrBackend">
+    </label>
+    <p class="small secondary pref-help">Use local-helper for local Whisper, or cloud-api for the older upload mode.</p>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <span>Local helper URL</span>
+      <input type="text" data-pref-key="helperUrl">
+    </label>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <span>Local helper Python path</span>
+      <input type="text" data-pref-key="helperPythonPath" placeholder="python3">
+    </label>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <span>Local helper script path</span>
+      <input type="text" data-pref-key="helperScriptPath">
+    </label>
+    <p class="small secondary pref-help">Optional. Fill this with the absolute path to helper/local_asr_helper.py if you want IINA to start it from the menu.</p>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <span>Local ASR model</span>
+      <input type="text" data-pref-key="localAsrModel">
+    </label>
+    <p class="small secondary pref-help">Try base for speed, small for accuracy, or tiny for the lowest latency.</p>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <span>Local ASR device</span>
+      <input type="text" data-pref-key="localAsrDevice">
+    </label>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <span>Local ASR compute type</span>
+      <input type="text" data-pref-key="localAsrComputeType">
+    </label>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <span>Local ASR window seconds</span>
+      <input type="number" min="1" max="8" step="0.1" data-pref-key="localAsrWindowSeconds">
+    </label>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <span>Local ASR stride seconds</span>
+      <input type="number" min="0.25" max="3" step="0.05" data-pref-key="localAsrStrideSeconds">
+    </label>
+  </div>
+
+  <div class="pref-section">
+    <label>
       <span>ffmpeg path</span>
       <input type="text" data-pref-key="ffmpegPath" placeholder="/opt/homebrew/bin/ffmpeg">
     </label>

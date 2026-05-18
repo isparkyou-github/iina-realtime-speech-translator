@@ -4,8 +4,8 @@ This IINA plugin transcribes the playing audio in near real time, translates the
 
 ## Features
 
-- Reads the current playback time and extracts short audio chunks with `ffmpeg`.
-- Sends each chunk to a speech-to-text endpoint.
+- Supports a local low-latency ASR helper powered by `ffmpeg` and `faster-whisper`.
+- Keeps the older cloud API chunk-upload mode as a fallback.
 - Sends recognized speech to an OpenAI-compatible `/v1/chat/completions` endpoint for translation.
 - Shows the recognized speech and translation in an overlay.
 - Keeps the previous translation visible while processing; it does not show unrelated listening/translating status text.
@@ -14,7 +14,8 @@ This IINA plugin transcribes the playing audio in near real time, translates the
 ## Requirements
 
 - IINA 1.4.0 or later.
-- `ffmpeg` and `curl` available in `PATH`.
+- `ffmpeg` available in `PATH`.
+- Python 3 plus `faster-whisper` for local-helper mode.
 
 Install ffmpeg with Homebrew:
 
@@ -23,6 +24,18 @@ brew install ffmpeg
 ```
 
 If IINA cannot find `ffmpeg`, set `ffmpeg path` in plugin preferences. Common Homebrew paths are `/opt/homebrew/bin/ffmpeg` on Apple Silicon and `/usr/local/bin/ffmpeg` on Intel Macs.
+
+Install the helper dependency:
+
+```sh
+python3 -m pip install -r helper/requirements.txt
+```
+
+Start the helper:
+
+```sh
+python3 helper/local_asr_helper.py
+```
 
 ## Install
 
@@ -41,6 +54,7 @@ ln -s /path/to/realtime-translator.iinaplugin "$HOME/Library/Application Support
 In IINA Settings > Plugins > Realtime Speech Translator > Preferences:
 
 - Set `API key`.
+- Set `ASR backend` to `local-helper`.
 - Set `ffmpeg path` if auto-detection does not find it.
 - Set `Speech transcription URL`.
 - Set `Speech transcription model`.

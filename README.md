@@ -4,8 +4,8 @@
 
 ## 功能
 
-- 实时读取当前播放位置附近的音频片段。
-- 使用本机 `ffmpeg` 抽取短音频，使用 `curl` 上传到语音转写接口。
+- 支持本地 Whisper helper：用 `ffmpeg` 连续读取音频流，并用 `faster-whisper` 做窗口式低延迟转写。
+- 保留旧的 cloud-api 模式：切出短音频并上传到语音转写接口。
 - 支持 OpenAI 兼容的 speech-to-text 和 chat completions 接口。
 - 支持自定义 API URL、API Key、转写模型、翻译模型、源语言和目标语言。
 - 支持显示识别出的原文加译文，或只显示译文。
@@ -48,6 +48,32 @@ ln -s /path/to/realtime-translator.iinaplugin "$HOME/Library/Application Support
 
 ## 配置
 
+### 本地低延迟 ASR 模式
+
+先安装 helper 依赖：
+
+```sh
+python3 -m pip install -r helper/requirements.txt
+```
+
+启动本地 ASR helper：
+
+```sh
+python3 helper/local_asr_helper.py
+```
+
+然后在插件偏好设置里使用：
+
+- `ASR backend`：`local-helper`
+- `Local helper URL`：`http://127.0.0.1:8765`
+- `Local ASR model`：`base`，更低延迟可用 `tiny`，更高准确率可用 `small`
+- `Local ASR window seconds`：默认 `2`
+- `Local ASR stride seconds`：默认 `0.7`
+
+如果希望从 IINA 菜单启动 helper，把 `Local helper script path` 设置为 `helper/local_asr_helper.py` 的绝对路径，然后使用插件菜单里的 `Start Local ASR Helper`。
+
+### 翻译接口
+
 安装后进入：
 
 ```text
@@ -57,6 +83,7 @@ Settings > Plugins > Realtime Speech Translator > Preferences
 填写以下配置：
 
 - `API key`：你的接口密钥
+- `ASR backend`：默认 `local-helper`；如需旧的云端转写模式，改成 `cloud-api`
 - `ffmpeg path`：可留空自动检测；找不到时填 `/opt/homebrew/bin/ffmpeg` 或 `/usr/local/bin/ffmpeg`
 - `Speech transcription URL`：例如 `https://api.openai.com/v1/audio/transcriptions`
 - `Speech transcription model`：例如 `gpt-4o-mini-transcribe`
@@ -81,10 +108,10 @@ Settings > Plugins > Realtime Speech Translator > Preferences
 
 IINA 插件 API 不能直接拿到播放器内部的实时 PCM 音频流，所以插件采用外部工具方案：
 
-1. 定时读取 IINA/mpv 当前播放时间。
-2. 调用 `ffmpeg` 从当前媒体中抽取刚播放过的几秒音频。
-3. 调用 speech-to-text 接口得到转写文本。
-4. 调用 chat completions 接口翻译转写文本。
+1. 本地 helper 用 `ffmpeg` 从当前媒体持续输出 16kHz mono PCM。
+2. helper 用 `faster-whisper` 对滑动窗口进行本地转写。
+3. IINA 插件轮询 helper 的 `/latest` 获取最新识别文本。
+4. 插件调用 chat completions 接口翻译文本。
 5. 使用 IINA overlay 把译文显示在视频上。
 
 ## 限制

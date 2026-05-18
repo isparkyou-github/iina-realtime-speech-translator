@@ -6,6 +6,10 @@ let processing = false;
 let lastSegmentEnd = null;
 let lastRequestId = 0;
 let apiBackoffUntil = 0;
+let helperStartInFlight = false;
+let helperPollInFlight = false;
+let helperSessionKey = "";
+let lastHelperSeq = 0;
 const translationCache = {};
 const ffmpegCandidates = [
   "ffmpeg",
@@ -36,6 +40,24 @@ function readNumber(key, fallback) {
   return Number.isFinite(value) ? value : fallback;
 }
 
+function useLocalHelper() {
+  return pref("asrBackend", "local-helper") === "local-helper";
+}
+
+function helperBaseUrl() {
+  return String(pref("helperUrl", "http://127.0.0.1:8765")).replace(/\/+$/, "");
+}
+
+function helperPort() {
+  const match = helperBaseUrl().match(/:(\d+)(?:\/|$)/);
+  return match ? match[1] : "8765";
+}
+
+function jsonData(response) {
+  if (response && response.data) return response.data;
+  return JSON.parse((response && response.text) || "{}");
+}
+
 function migrateLatencyDefaults() {
   if (readBool("latencyDefaultsMigrated", false)) return;
 
@@ -64,6 +86,10 @@ function shortText(text, maxLength) {
   const cleaned = cleanText(text);
   if (cleaned.length <= maxLength) return cleaned;
   return cleaned.slice(0, maxLength - 1).trim() + "...";
+}
+
+function shellQuote(value) {
+  return "'" + String(value).replace(/'/g, "'\\''") + "'";
 }
 
 function apiErrorMessage(error) {
@@ -193,6 +219,154 @@ function workingDirectory() {
   return cwd || undefined;
 }
 
+async function startLocalHelperProcess() {
+  const scriptPath = pref("helperScriptPath", "");
+  if (!scriptPath) return false;
+
+  const pythonPath = pref("helperPythonPath", "python3");
+  const logPath = "/tmp/iina-realtime-speech-helper.log";
+  const command = [
+    "nohup",
+    shellQuote(pythonPath),
+    shellQuote(scriptPath),
+    "--host",
+    "127.0.0.1",
+    "--port",
+    helperPort(),
+    ">",
+    shellQuote(logPath),
+    "2>&1",
+    "&"
+  ].join(" ");
+  const result = await utils.exec("/bin/sh", ["-lc", command]);
+  return result.status === 0;
+}
+
+async function helperGet(path) {
+  const response = await http.get(helperBaseUrl() + path, { headers: { "Cache-Control": "no-cache" } });
+  return jsonData(response);
+}
+
+async function helperPost(path, body) {
+  const response = await http.post(helperBaseUrl() + path, {
+    headers: { "Content-Type": "application/json" },
+    data: body
+  });
+  return jsonData(response);
+}
+
+async function ensureLocalHelperSession(force) {
+  if (helperStartInFlight) return false;
+  const media = mediaPath();
+  if (!media) return false;
+
+  const sessionKey = [
+    media,
+    Math.floor(currentTime()),
+    pref("localAsrModel", "base"),
+    pref("sourceLanguage", "auto")
+  ].join("|");
+
+  if (!force && sessionKey === helperSessionKey) return true;
+
+  helperStartInFlight = true;
+  try {
+    try {
+      await helperGet("/health");
+    } catch (err) {
+      const started = await startLocalHelperProcess();
+      if (!started) {
+        render("", "", "Start local ASR helper or set helperScriptPath in preferences.");
+        return false;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 900));
+    }
+
+    const result = await helperPost("/start", {
+      media_path: media,
+      start_time: currentTime(),
+      ffmpeg_path: ffmpegBinary() || "ffmpeg",
+      model: pref("localAsrModel", "base"),
+      device: pref("localAsrDevice", "auto"),
+      compute_type: pref("localAsrComputeType", "auto"),
+      language: pref("sourceLanguage", "auto"),
+      window_seconds: readNumber("localAsrWindowSeconds", 2),
+      stride_seconds: readNumber("localAsrStrideSeconds", 0.7)
+    });
+
+    if (result && result.ok) {
+      helperSessionKey = sessionKey;
+      lastHelperSeq = 0;
+      return true;
+    }
+    render("", "", shortText((result && result.error) || "Could not start local ASR helper", 120));
+    return false;
+  } catch (err) {
+    render("", "", "Local ASR helper unavailable. Start helper or check preferences.");
+    console.error("[Realtime Speech Translator] helper start failed: " + cleanText(err && err.message));
+    return false;
+  } finally {
+    helperStartInFlight = false;
+  }
+}
+
+function startLocalHelperCapture(force) {
+  ensureLocalHelperSession(force).then((ok) => {
+    if (ok) pollLocalHelper();
+  });
+}
+
+async function stopLocalHelperSession() {
+  helperSessionKey = "";
+  try {
+    await helperPost("/stop", {});
+  } catch (err) {
+    // The helper may not be running when disabling the plugin.
+  }
+}
+
+async function pollLocalHelper() {
+  if (!enabled || !useLocalHelper() || helperPollInFlight || Date.now() < apiBackoffUntil) return;
+  if (!helperSessionKey) {
+    await ensureLocalHelperSession(false);
+    return;
+  }
+
+  helperPollInFlight = true;
+  try {
+    const latest = await helperGet("/latest");
+    if (latest.status === "error" && latest.error) {
+      render("", "", shortText(latest.error, 120));
+      helperSessionKey = "";
+      return;
+    }
+
+    const seq = Number(latest.seq || 0);
+    const transcript = cleanText(latest.text || "");
+    if (!transcript || seq <= lastHelperSeq) return;
+
+    lastHelperSeq = seq;
+    const requestId = ++lastRequestId;
+    const translated = await translateTranscript(transcript);
+    if (requestId === lastRequestId && enabled && useLocalHelper()) {
+      render(transcript, translated, "");
+    }
+  } catch (err) {
+    helperSessionKey = "";
+    console.error("[Realtime Speech Translator] helper poll failed: " + cleanText(err && err.message));
+  } finally {
+    helperPollInFlight = false;
+  }
+}
+
+async function restartLocalHelper() {
+  clearOverlay();
+  helperSessionKey = "";
+  lastHelperSeq = 0;
+  await ensureLocalHelperSession(true);
+  await pollLocalHelper();
+}
+
 function resetTimeline() {
   const now = currentTime();
   lastSegmentEnd = Math.max(0, now - readNumber("chunkSeconds", 2));
@@ -215,9 +389,14 @@ function setEnabled(next) {
 
 function startCapture() {
   if (timer) clearInterval(timer);
-  resetTimeline();
-  timer = setInterval(captureTick, Math.max(250, readNumber("pollIntervalMs", 650)));
-  captureTick();
+  if (useLocalHelper()) {
+    startLocalHelperCapture(true);
+    timer = setInterval(pollLocalHelper, Math.max(250, readNumber("pollIntervalMs", 650)));
+  } else {
+    resetTimeline();
+    timer = setInterval(captureTick, Math.max(250, readNumber("pollIntervalMs", 650)));
+    captureTick();
+  }
 }
 
 function stopCapture() {
@@ -226,6 +405,7 @@ function stopCapture() {
     timer = null;
   }
   processing = false;
+  if (useLocalHelper()) stopLocalHelperSession();
 }
 
 function canCapture() {
@@ -463,8 +643,21 @@ menu.addItem(menu.item("Toggle Realtime Speech Translation", () => {
 
 menu.addItem(menu.item("Restart Realtime Speech Translation", () => {
   setupOverlay();
-  resetTimeline();
-  captureTick();
+  if (useLocalHelper()) {
+    restartLocalHelper();
+  } else {
+    resetTimeline();
+    captureTick();
+  }
+}));
+
+menu.addItem(menu.item("Start Local ASR Helper", () => {
+  startLocalHelperProcess()
+    .then((started) => core.osd(started ? "Local ASR helper started" : "Set helperScriptPath first"))
+    .catch((err) => {
+      console.error("[Realtime Speech Translator] " + cleanText(err && err.message));
+      core.osd("Could not start local ASR helper");
+    });
 }));
 
 event.on("iina.window-loaded", () => {
@@ -482,6 +675,7 @@ event.on("iina.file-loaded", () => {
 event.on("mpv.seek", () => {
   resetTimeline();
   clearOverlay();
+  if (enabled && useLocalHelper()) restartLocalHelper();
 });
 
 if (core.window.loaded) {
