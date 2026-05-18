@@ -69,6 +69,8 @@ python3 helper/local_asr_helper.py
 - `Local ASR model`：`base`，更低延迟可用 `tiny`，更高准确率可用 `small`
 - `Local ASR window seconds`：默认 `2`
 - `Local ASR stride seconds`：默认 `0.7`
+- `Local ASR dedupe ratio`：默认 `0.86`，降低可减少重复字幕，提高会更敏感
+- `Local ASR emit cooldown, ms`：默认 `700`，控制新识别文本最短发出间隔
 
 如果希望从 IINA 菜单启动 helper，把 `Local helper script path` 设置为 `helper/local_asr_helper.py` 的绝对路径，然后使用插件菜单里的 `Start Local ASR Helper`。
 
@@ -110,9 +112,10 @@ IINA 插件 API 不能直接拿到播放器内部的实时 PCM 音频流，所�
 
 1. 本地 helper 用 `ffmpeg` 从当前媒体持续输出 16kHz mono PCM。
 2. helper 用 `faster-whisper` 对滑动窗口进行本地转写。
-3. IINA 插件轮询 helper 的 `/latest` 获取最新识别文本。
-4. 插件调用 chat completions 接口翻译文本。
-5. 使用 IINA overlay 把译文显示在视频上。
+3. helper 对滑动窗口结果做去重、最小长度过滤和发出冷却。
+4. IINA 插件轮询 helper 的 `/latest` 获取最新识别文本。
+5. 插件调用 chat completions 接口翻译文本。
+6. 使用 IINA overlay 把译文显示在视频上。
 
 ## 限制
 

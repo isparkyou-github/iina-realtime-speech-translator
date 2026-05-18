@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import collections
+import difflib
 import json
 import os
 import subprocess
@@ -39,6 +40,17 @@ def clean_text(value):
     return " ".join(str(value or "").split()).strip()
 
 
+def normalize_text(value):
+    return clean_text(value).lower().strip(" .,!?;:'\"，。！？；：、")
+
+
+def number_config(config, key, default):
+    value = config.get(key)
+    if value is None or value == "":
+        return default
+    return type(default)(value)
+
+
 def set_state(**updates):
     with state_lock:
         state.update(updates)
@@ -66,6 +78,8 @@ class AsrWorker:
         self.process = None
         self.model = None
         self.last_text = ""
+        self.last_normalized = ""
+        self.last_emit_at = 0.0
 
     def start(self):
         self.thread.start()
@@ -138,6 +152,46 @@ class AsrWorker:
             except OSError:
                 pass
 
+    def should_emit(self, text):
+        normalized = normalize_text(text)
+        if not normalized:
+            return False
+
+        min_chars = number_config(self.config, "min_chars", 4)
+        min_words = number_config(self.config, "min_words", 2)
+        if len(normalized) < min_chars:
+            return False
+        if len(normalized.split()) < min_words and len(normalized) < 8:
+            return False
+
+        now = time.time()
+        cooldown = max(0.0, number_config(self.config, "emit_cooldown_seconds", 0.7))
+        if now - self.last_emit_at < cooldown:
+            return False
+
+        if not self.last_normalized:
+            return True
+
+        if normalized == self.last_normalized:
+            return False
+        if normalized in self.last_normalized or self.last_normalized in normalized:
+            return False
+
+        ratio = difflib.SequenceMatcher(None, normalized, self.last_normalized).ratio()
+        dedupe_ratio = number_config(self.config, "dedupe_ratio", 0.86)
+        return ratio < dedupe_ratio
+
+    def emit_text(self, text):
+        self.last_text = text
+        self.last_normalized = normalize_text(text)
+        self.last_emit_at = time.time()
+        with state_lock:
+            state["seq"] += 1
+            state["text"] = text
+            state["status"] = "listening"
+            state["error"] = ""
+            state["updated_at"] = time.time()
+
     def run(self):
         try:
             self.load_model()
@@ -163,14 +217,8 @@ class AsrWorker:
                     continue
 
                 text = self.transcribe_window(bytes(audio))
-                if text and text != self.last_text:
-                    self.last_text = text
-                    with state_lock:
-                        state["seq"] += 1
-                        state["text"] = text
-                        state["status"] = "listening"
-                        state["error"] = ""
-                        state["updated_at"] = time.time()
+                if self.should_emit(text):
+                    self.emit_text(text)
 
             code = self.process.poll()
             if code not in (0, None) and not self.stop_event.is_set():
@@ -261,4 +309,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

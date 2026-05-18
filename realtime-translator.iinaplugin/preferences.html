@@ -98,6 +98,35 @@
 
   <div class="pref-section">
     <label>
+      <span>Local ASR min characters</span>
+      <input type="number" min="1" max="40" step="1" data-type="int" data-pref-key="localAsrMinChars">
+    </label>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <span>Local ASR min words</span>
+      <input type="number" min="1" max="8" step="1" data-type="int" data-pref-key="localAsrMinWords">
+    </label>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <span>Local ASR dedupe ratio</span>
+      <input type="number" min="0.5" max="0.98" step="0.01" data-pref-key="localAsrDedupeRatio">
+    </label>
+    <p class="small secondary pref-help">Higher values emit more small changes. Lower values reduce repeated subtitles. Default: 0.86.</p>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <span>Local ASR emit cooldown, ms</span>
+      <input type="number" min="0" max="3000" step="50" data-type="int" data-pref-key="localAsrEmitCooldownMs">
+    </label>
+  </div>
+
+  <div class="pref-section">
+    <label>
       <span>ffmpeg path</span>
       <input type="text" data-pref-key="ffmpegPath" placeholder="/opt/homebrew/bin/ffmpeg">
     </label>

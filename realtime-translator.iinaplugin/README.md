@@ -5,6 +5,7 @@ This IINA plugin transcribes the playing audio in near real time, translates the
 ## Features
 
 - Supports a local low-latency ASR helper powered by `ffmpeg` and `faster-whisper`.
+- Filters short, repeated, and overly similar recognition windows before translating.
 - Keeps the older cloud API chunk-upload mode as a fallback.
 - Sends recognized speech to an OpenAI-compatible `/v1/chat/completions` endpoint for translation.
 - Shows the recognized speech and translation in an overlay.

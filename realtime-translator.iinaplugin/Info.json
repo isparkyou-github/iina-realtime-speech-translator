@@ -1,6 +1,6 @@
 {
   "name": "Realtime Speech Translator",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "identifier": "dev.codex.iina.realtime-speech-translator",
   "author": {
     "name": "Codex"
@@ -29,6 +29,10 @@
     "localAsrComputeType": "auto",
     "localAsrWindowSeconds": 2,
     "localAsrStrideSeconds": 0.7,
+    "localAsrMinChars": 4,
+    "localAsrMinWords": 2,
+    "localAsrDedupeRatio": 0.86,
+    "localAsrEmitCooldownMs": 700,
     "ffmpegPath": "",
     "curlPath": "",
     "transcriptionUrl": "https://api.openai.com/v1/audio/transcriptions",

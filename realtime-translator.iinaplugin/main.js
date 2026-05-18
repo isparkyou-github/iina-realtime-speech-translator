@@ -291,7 +291,11 @@ async function ensureLocalHelperSession(force) {
       compute_type: pref("localAsrComputeType", "auto"),
       language: pref("sourceLanguage", "auto"),
       window_seconds: readNumber("localAsrWindowSeconds", 2),
-      stride_seconds: readNumber("localAsrStrideSeconds", 0.7)
+      stride_seconds: readNumber("localAsrStrideSeconds", 0.7),
+      min_chars: readNumber("localAsrMinChars", 4),
+      min_words: readNumber("localAsrMinWords", 2),
+      dedupe_ratio: readNumber("localAsrDedupeRatio", 0.86),
+      emit_cooldown_seconds: readNumber("localAsrEmitCooldownMs", 700) / 1000
     });
 
     if (result && result.ok) {
