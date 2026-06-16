@@ -5,6 +5,7 @@ This IINA plugin transcribes the playing audio in near real time, translates the
 ## Features
 
 - Supports a local low-latency ASR helper powered by `ffmpeg` and `faster-whisper`.
+- Supports `whisper.cpp` as a free local ASR engine using `whisper-server` and ggml models.
 - Filters short, repeated, and overly similar recognition windows before translating.
 - Keeps the older cloud API chunk-upload mode as a fallback.
 - Sends recognized speech to an OpenAI-compatible `/v1/chat/completions` endpoint for translation.
@@ -16,7 +17,8 @@ This IINA plugin transcribes the playing audio in near real time, translates the
 
 - IINA 1.4.0 or later.
 - `ffmpeg` available in `PATH`.
-- Python 3 plus `faster-whisper` for local-helper mode.
+- Python 3 plus `faster-whisper` for the default local-helper mode.
+- Optional: `whisper.cpp` and a ggml model file for the free local `whisper.cpp` engine.
 
 Install ffmpeg with Homebrew:
 
@@ -30,6 +32,15 @@ Install the helper dependency:
 
 ```sh
 python3 -m pip install -r helper/requirements.txt
+```
+
+Optional free local `whisper.cpp` engine:
+
+```sh
+brew install whisper-cpp
+mkdir -p "$HOME/Models/whisper.cpp"
+curl -L -o "$HOME/Models/whisper.cpp/ggml-base.bin" \
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin
 ```
 
 Start the helper:
@@ -56,6 +67,8 @@ In IINA Settings > Plugins > Realtime Speech Translator > Preferences:
 
 - Set `API key`.
 - Set `ASR backend` to `local-helper`.
+- Set `Local ASR engine` to `faster-whisper` or `whisper.cpp`.
+- For `whisper.cpp`, set `Whisper.cpp command path` and `Whisper.cpp model path`; the helper derives `whisper-server` from the command path.
 - Set `ffmpeg path` if auto-detection does not find it.
 - Set `Speech transcription URL`.
 - Set `Speech transcription model`.

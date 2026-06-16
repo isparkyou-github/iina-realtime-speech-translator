@@ -263,7 +263,9 @@ async function ensureLocalHelperSession(force) {
   const sessionKey = [
     media,
     Math.floor(currentTime()),
+    pref("localAsrEngine", "faster-whisper"),
     pref("localAsrModel", "base"),
+    pref("whisperCppModelPath", ""),
     pref("sourceLanguage", "auto")
   ].join("|");
 
@@ -286,9 +288,13 @@ async function ensureLocalHelperSession(force) {
       media_path: media,
       start_time: currentTime(),
       ffmpeg_path: ffmpegBinary() || "ffmpeg",
+      engine: pref("localAsrEngine", "faster-whisper"),
       model: pref("localAsrModel", "base"),
       device: pref("localAsrDevice", "auto"),
       compute_type: pref("localAsrComputeType", "auto"),
+      whisper_cpp_path: pref("whisperCppPath", "whisper-cli"),
+      whisper_cpp_model_path: pref("whisperCppModelPath", ""),
+      whisper_cpp_threads: readNumber("whisperCppThreads", 0),
       language: pref("sourceLanguage", "auto"),
       window_seconds: readNumber("localAsrWindowSeconds", 2),
       stride_seconds: readNumber("localAsrStrideSeconds", 0.7),

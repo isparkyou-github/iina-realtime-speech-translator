@@ -40,6 +40,17 @@
 
   <div class="pref-section">
     <label>
+      <span>Local ASR engine</span>
+      <select data-pref-key="localAsrEngine">
+        <option value="faster-whisper">faster-whisper</option>
+        <option value="whisper.cpp">whisper.cpp</option>
+      </select>
+    </label>
+    <p class="small secondary pref-help">Use whisper.cpp for a free local macOS path with Metal/Core ML builds.</p>
+  </div>
+
+  <div class="pref-section">
+    <label>
       <span>Local helper URL</span>
       <input type="text" data-pref-key="helperUrl">
     </label>
@@ -80,6 +91,30 @@
       <span>Local ASR compute type</span>
       <input type="text" data-pref-key="localAsrComputeType">
     </label>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <span>Whisper.cpp command path</span>
+      <input type="text" data-pref-key="whisperCppPath" placeholder="whisper-cli">
+    </label>
+    <p class="small secondary pref-help">Example: whisper-cli or /opt/homebrew/bin/whisper-cli. The helper uses the matching whisper-server.</p>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <span>Whisper.cpp model path</span>
+      <input type="text" data-pref-key="whisperCppModelPath" placeholder="/path/to/ggml-base.bin">
+    </label>
+    <p class="small secondary pref-help">Required when Local ASR engine is whisper.cpp. Use a ggml model file such as ggml-base.bin or ggml-small.bin.</p>
+  </div>
+
+  <div class="pref-section">
+    <label>
+      <span>Whisper.cpp threads</span>
+      <input type="number" min="0" max="16" step="1" data-type="int" data-pref-key="whisperCppThreads">
+    </label>
+    <p class="small secondary pref-help">Use 0 for whisper.cpp default. Try 4-8 if CPU-only performance is unstable.</p>
   </div>
 
   <div class="pref-section">

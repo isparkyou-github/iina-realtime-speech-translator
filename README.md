@@ -5,6 +5,7 @@
 ## 功能
 
 - 支持本地 Whisper helper：用 `ffmpeg` 连续读取音频流，并用 `faster-whisper` 做窗口式低延迟转写。
+- 支持免费本地 `whisper.cpp` 引擎：可使用 Homebrew 或自行编译的 `whisper-cli` 和 ggml 模型。
 - 保留旧的 cloud-api 模式：切出短音频并上传到语音转写接口。
 - 支持 OpenAI 兼容的 speech-to-text 和 chat completions 接口。
 - 支持自定义 API URL、API Key、转写模型、翻译模型、源语言和目标语言。
@@ -50,6 +51,8 @@ ln -s /path/to/realtime-translator.iinaplugin "$HOME/Library/Application Support
 
 ### 本地低延迟 ASR 模式
 
+#### 方案 A：faster-whisper
+
 先安装 helper 依赖：
 
 ```sh
@@ -71,6 +74,35 @@ python3 helper/local_asr_helper.py
 - `Local ASR stride seconds`：默认 `0.7`
 - `Local ASR dedupe ratio`：默认 `0.86`，降低可减少重复字幕，提高会更敏感
 - `Local ASR emit cooldown, ms`：默认 `700`，控制新识别文本最短发出间隔
+
+#### 方案 B：whisper.cpp，免费本地替代方案
+
+`whisper.cpp` 适合 Apple Silicon Mac 上的免费本地转写路径。它仍然通过同一个 helper 工作：helper 会启动本地 `whisper-server`，让模型只加载一次，然后把滑动窗口音频发给这个本地服务转写。
+
+安装：
+
+```sh
+brew install whisper-cpp
+```
+
+下载模型文件。示例路径只是建议，你也可以放在任意目录：
+
+```sh
+mkdir -p "$HOME/Models/whisper.cpp"
+curl -L -o "$HOME/Models/whisper.cpp/ggml-base.bin" \
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin
+```
+
+然后在插件偏好设置里使用：
+
+- `ASR backend`：`local-helper`
+- `Local ASR engine`：`whisper.cpp`
+- `Whisper.cpp command path`：`whisper-cli`，或 `/opt/homebrew/bin/whisper-cli`。helper 会自动找到同目录的 `whisper-server`
+- `Whisper.cpp model path`：例如 `/Users/you/Models/whisper.cpp/ggml-base.bin`
+- `Local ASR window seconds`：建议先用 `2`
+- `Local ASR stride seconds`：建议先用 `0.7`
+
+如果延迟仍然偏高，先试 `ggml-tiny.bin`；如果准确率不够，再试 `ggml-small.bin`。
 
 如果希望从 IINA 菜单启动 helper，把 `Local helper script path` 设置为 `helper/local_asr_helper.py` 的绝对路径，然后使用插件菜单里的 `Start Local ASR Helper`。
 
@@ -111,7 +143,7 @@ Settings > Plugins > Realtime Speech Translator > Preferences
 IINA 插件 API 不能直接拿到播放器内部的实时 PCM 音频流，所以插件采用外部工具方案：
 
 1. 本地 helper 用 `ffmpeg` 从当前媒体持续输出 16kHz mono PCM。
-2. helper 用 `faster-whisper` 对滑动窗口进行本地转写。
+2. helper 用 `faster-whisper` 或 `whisper.cpp` 对滑动窗口进行本地转写。
 3. helper 对滑动窗口结果做去重、最小长度过滤和发出冷却。
 4. IINA 插件轮询 helper 的 `/latest` 获取最新识别文本。
 5. 插件调用 chat completions 接口翻译文本。

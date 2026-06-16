@@ -4,10 +4,14 @@ import collections
 import difflib
 import json
 import os
+import re
+import shutil
+import socket
 import subprocess
 import tempfile
 import threading
 import time
+import urllib.request
 import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
@@ -51,6 +55,16 @@ def number_config(config, key, default):
     return type(default)(value)
 
 
+def int_config(config, key, default):
+    value = config.get(key)
+    if value is None or value == "":
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def set_state(**updates):
     with state_lock:
         state.update(updates)
@@ -70,16 +84,27 @@ def write_wav(path, pcm):
         wav.writeframes(pcm)
 
 
+def available_binary(path_or_name):
+    if not path_or_name:
+        return ""
+    if os.path.sep in path_or_name:
+        return path_or_name if os.path.exists(path_or_name) and os.access(path_or_name, os.X_OK) else ""
+    return shutil.which(path_or_name) or ""
+
+
 class AsrWorker:
     def __init__(self, config):
         self.config = config
         self.stop_event = threading.Event()
         self.thread = threading.Thread(target=self.run, daemon=True)
         self.process = None
+        self.asr_process = None
         self.model = None
         self.last_text = ""
         self.last_normalized = ""
         self.last_emit_at = 0.0
+        self.engine = self.config.get("engine") or "faster-whisper"
+        self.whisper_cpp_server_url = ""
 
     def start(self):
         self.thread.start()
@@ -92,8 +117,18 @@ class AsrWorker:
                 self.process.wait(timeout=2)
             except subprocess.TimeoutExpired:
                 self.process.kill()
+        if self.asr_process and self.asr_process.poll() is None:
+            self.asr_process.terminate()
+            try:
+                self.asr_process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                self.asr_process.kill()
 
     def load_model(self):
+        if self.engine == "whisper.cpp":
+            self.load_whisper_cpp()
+            return
+
         if WhisperModel is None:
             raise RuntimeError(
                 "faster-whisper is not installed. Run: python3 -m pip install -r helper/requirements.txt"
@@ -103,6 +138,83 @@ class AsrWorker:
         compute_type = self.config.get("compute_type") or "auto"
         set_state(status="loading-model", error="")
         self.model = WhisperModel(model_name, device=device, compute_type=compute_type)
+
+    def load_whisper_cpp(self):
+        command = self.config.get("whisper_cpp_server_path") or ""
+        if not command:
+            cli_command = self.config.get("whisper_cpp_path") or "whisper-cli"
+            cli_path = available_binary(cli_command)
+            if cli_path and os.path.basename(cli_path) == "whisper-cli":
+                sibling = os.path.join(os.path.dirname(cli_path), "whisper-server")
+                command = sibling if os.path.exists(sibling) else "whisper-server"
+            else:
+                command = "whisper-server"
+        command_path = available_binary(command)
+        if not command_path:
+            raise RuntimeError(
+                "whisper-server command not found. Install whisper.cpp with Homebrew."
+            )
+
+        model_path = self.config.get("whisper_cpp_model_path") or self.config.get("model_path") or ""
+        if not model_path or not os.path.exists(model_path):
+            raise RuntimeError(
+                "Whisper.cpp model path is required. Download a ggml model and set Whisper.cpp model path."
+            )
+
+        self.config["whisper_cpp_server_path"] = command_path
+        self.config["whisper_cpp_model_path"] = model_path
+        set_state(status="loading-whisper.cpp", error="")
+        self.start_whisper_cpp_server()
+
+    def free_port(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind(("127.0.0.1", 0))
+            return sock.getsockname()[1]
+
+    def wait_for_port(self, port, timeout=35):
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if self.asr_process and self.asr_process.poll() is not None:
+                raise RuntimeError("whisper-server exited before it was ready")
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+                    return
+            except OSError:
+                time.sleep(0.2)
+        raise RuntimeError("whisper-server did not become ready")
+
+    def start_whisper_cpp_server(self):
+        port = int_config(self.config, "whisper_cpp_server_port", 0) or self.free_port()
+        language = self.config.get("language") or "auto"
+        threads = int_config(self.config, "whisper_cpp_threads", 0)
+        args = [
+            self.config["whisper_cpp_server_path"],
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+            "-m",
+            self.config["whisper_cpp_model_path"],
+            "-l",
+            language,
+            "-nt",
+            "-bo",
+            "1",
+            "-bs",
+            "1",
+            "-nth",
+            "0.65",
+        ]
+        if threads > 0:
+            args.extend(["-t", str(threads)])
+
+        self.asr_process = subprocess.Popen(
+            args,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        self.wait_for_port(port)
+        self.whisper_cpp_server_url = "http://127.0.0.1:%s/inference" % port
 
     def ffmpeg_command(self):
         ffmpeg = self.config.get("ffmpeg_path") or "ffmpeg"
@@ -128,6 +240,9 @@ class AsrWorker:
         ]
 
     def transcribe_window(self, pcm):
+        if self.engine == "whisper.cpp":
+            return self.transcribe_window_whisper_cpp(pcm)
+
         fd, path = tempfile.mkstemp(prefix="iina-rst-", suffix=".wav")
         os.close(fd)
         try:
@@ -151,6 +266,78 @@ class AsrWorker:
                 os.unlink(path)
             except OSError:
                 pass
+
+    def transcribe_window_whisper_cpp(self, pcm):
+        fd, path = tempfile.mkstemp(prefix="iina-rst-", suffix=".wav")
+        os.close(fd)
+        try:
+            write_wav(path, pcm)
+            data, content_type = self.multipart_payload(
+                {
+                    "temperature": "0.0",
+                    "temperature_inc": "0.0",
+                    "response_format": "json",
+                },
+                "file",
+                path,
+            )
+            request = urllib.request.Request(
+                self.whisper_cpp_server_url,
+                data=data,
+                headers={"Content-Type": content_type},
+                method="POST",
+            )
+            with urllib.request.urlopen(
+                request,
+                timeout=max(20, int(number_config(self.config, "window_seconds", 2.0) * 10)),
+            ) as response:
+                payload = response.read().decode("utf-8", "replace")
+            return self.extract_whisper_cpp_text(payload)
+        finally:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+
+    def multipart_payload(self, fields, file_field, file_path):
+        boundary = "iina-rst-%d" % int(time.time() * 1000000)
+        chunks = []
+        for name, value in fields.items():
+            chunks.append(("--%s\r\n" % boundary).encode("utf-8"))
+            chunks.append(('Content-Disposition: form-data; name="%s"\r\n\r\n' % name).encode("utf-8"))
+            chunks.append(str(value).encode("utf-8"))
+            chunks.append(b"\r\n")
+
+        filename = os.path.basename(file_path)
+        chunks.append(("--%s\r\n" % boundary).encode("utf-8"))
+        header = (
+            'Content-Disposition: form-data; name="%s"; filename="%s"\r\n'
+            "Content-Type: audio/wav\r\n\r\n"
+        ) % (file_field, filename)
+        chunks.append(header.encode("utf-8"))
+        with open(file_path, "rb") as handle:
+            chunks.append(handle.read())
+        chunks.append(b"\r\n")
+        chunks.append(("--%s--\r\n" % boundary).encode("utf-8"))
+        return b"".join(chunks), "multipart/form-data; boundary=%s" % boundary
+
+    def extract_whisper_cpp_text(self, payload):
+        cleaned = clean_text(payload)
+        if not cleaned:
+            return ""
+        try:
+            data = json.loads(cleaned)
+        except json.JSONDecodeError:
+            return clean_text(re.sub(r"\[[^\]]+\]", " ", cleaned))
+
+        if isinstance(data, dict):
+            if data.get("text"):
+                return clean_text(data["text"])
+            if isinstance(data.get("segments"), list):
+                return clean_text(" ".join(clean_text(segment.get("text", "")) for segment in data["segments"]))
+            if isinstance(data.get("transcription"), list):
+                return clean_text(" ".join(clean_text(segment.get("text", "")) for segment in data["transcription"]))
+        return cleaned
 
     def should_emit(self, text):
         normalized = normalize_text(text)
@@ -227,6 +414,13 @@ class AsrWorker:
             set_state(running=False, status="stopped")
         except Exception as exc:
             set_state(running=False, status="error", error=clean_text(exc))
+        finally:
+            if self.asr_process and self.asr_process.poll() is None:
+                self.asr_process.terminate()
+                try:
+                    self.asr_process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    self.asr_process.kill()
 
 
 def stop_worker():
@@ -269,6 +463,7 @@ class Handler(BaseHTTPRequestHandler):
             data["ok"] = True
             data["whisper_available"] = WhisperModel is not None
             data["whisper_import_error"] = whisper_import_error
+            data["whisper_cpp_available"] = bool(available_binary("whisper-server"))
             self.send_json(200, data)
             return
         if path == "/latest":
